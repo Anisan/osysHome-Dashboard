@@ -1,0 +1,63 @@
+{% extends "layouts/base.html" %}
+
+{% block title %} Dashboard {% endblock %} 
+
+<!-- Specific CSS goes HERE -->
+{% block stylesheets %}{% endblock stylesheets %}
+
+{% block content %}
+
+    <!-- [ Main Content ] start -->
+    <div class="pcoded-main-container">
+        <div class="pcoded-wrapper">
+            <div class="jumbotron text-center">
+                <h1>{{ _('Welcome!')}}</h1>
+              </div>
+        </div>
+  
+      <div class="row mx-1">
+        {% for key,template in objects.items()%}
+        <div class="col-sm-6 col-md-4 col-lg-2 mb-2 px-1">
+          <div class="card p-2" style="height:100%;" id="obj:{{key}}">
+            {{template|safe}}
+          </div>
+        </div>
+        {%endfor%}
+   
+      </div>
+    </div>  
+    <!-- [ Main Content ] end -->     
+
+    {% from "macros.html" import display_items %}
+
+    {{ display_items() }}
+
+    <script>
+      // Функция для обновления времени на всех компонентах
+      function updateAllTimes() {
+        var timeComponents = document.querySelectorAll('.time-component'); // Находим все компоненты времени
+    
+        // Обновляем время на каждом компоненте
+        timeComponents.forEach(function(component) {
+          // Получаем текущее время
+          var currentTime = new Date();
+          // Получаем начальное время из атрибута data-start-time
+          var startTime = new Date(component.dataset.startTime);
+          // Вычисляем разницу между текущим временем и начальным временем
+          var elapsedTime = currentTime - startTime;
+          // Обновляем время на компоненте
+          component.textContent = formatTimeDiff(elapsedTime);
+        });
+      }
+    
+      // Обновляем время каждую секунду
+      setInterval(updateAllTimes, 1000);
+    
+      // Запускаем функцию для обновления времени при загрузке страницы
+      updateAllTimes();
+    </script>
+
+{% endblock content %}
+
+<!-- Specific Page JS goes HERE  -->
+{% block javascripts %}{% endblock javascripts %}
