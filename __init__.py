@@ -1,7 +1,7 @@
 # -*- encoding: utf-8 -*-
 from flask import render_template
 from app.core.main.BasePlugin import BasePlugin
-from app.core.main.ObjectsStorage import objects
+from app.core.main.ObjectsStorage import objects_storage
 from app.authentication.handlers import handle_user_required
 
 class Dashboard(BasePlugin):
@@ -23,7 +23,9 @@ class Dashboard(BasePlugin):
         @handle_user_required
         def index():
             templates = {}
-            for key,obj in objects.items():
+            objects_storage.preload_objects()
+            
+            for key,obj in objects_storage.items():
                 if not obj.template: continue
                 render = obj.render()
                 templates[key]=render
