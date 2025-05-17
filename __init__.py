@@ -11,7 +11,9 @@ class Dashboard(BasePlugin):
         self.title = "Dashboard"
         self.description = """Simple dashboard"""
         self.version = 0.1
-    
+        self.category = "App"
+        self.author = "Eraser"
+
     def initialization(self):
         pass
 
@@ -26,9 +28,9 @@ class Dashboard(BasePlugin):
             objects_storage.preload_objects()
             
             for key,obj in objects_storage.items():
-                if not obj.template: continue
                 render = obj.render()
-                templates[key]=render
+                if render:
+                    templates[key] = render
             content = {
                 'objects': templates,
             }
