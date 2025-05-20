@@ -10,7 +10,7 @@ class Dashboard(BasePlugin):
         super().__init__(app,__name__)
         self.title = "Dashboard"
         self.description = """Simple dashboard"""
-        self.version = 0.1
+        self.version = 0.2
         self.category = "App"
         self.author = "Eraser"
 
@@ -26,8 +26,8 @@ class Dashboard(BasePlugin):
         def index():
             templates = {}
             objects_storage.preload_objects()
-            
-            for key,obj in objects_storage.items():
+
+            for key, obj in sorted(objects_storage.items(), key=lambda x: x[0].lower()):
                 render = obj.render()
                 if render:
                     templates[key] = render
