@@ -5,5 +5,14 @@
 {% block module %}
 <h2>Dashboard</h2>
 <p>Use path "<a href="/index">/index</a>" for user home page</p>
-
+<h2>Settings</h2>
+<form method="POST">
+    <!-- Поля формы -->
+    {{ form.hidden_tag() }}
+    <div class="mb-3">
+        {{ form.group.label(class="form-label me-2") }}
+        {{ form.group(class="form-check-input") }}
+    </div>
+    <button type="submit" class="btn btn-primary">Save</button>
+</form>
 {% endblock %}

@@ -17,7 +17,7 @@
   
       <div class="row mx-1">
         {% for key,template in objects.items()%}
-        <div class="col-sm-6 col-md-4 col-lg-2 mb-2 px-1">
+        <div class="col-6 col-sm-4 col-md-3 col-lg-2 col-xl-1-5 col-xxl-1-5 mb-2 px-1">
           <div class="card p-2" style="height:100%;" id="obj:{{key}}">
             {{template|safe}}
           </div>
@@ -27,6 +27,21 @@
       </div>
     </div>  
     <!-- [ Main Content ] end -->     
+    <style>
+
+        /* Кастомные классы для колонок */
+      @media (min-width: 2400px) {
+        .col-xxl-1-5 {
+          flex: 0 0 auto;
+          width: 10%; /* 100% / 8 */
+        }
+      }
+      @media (min-width: 1900px) and (max-width: 2399.98px) {
+        .col-xl-1-5 {
+          flex: 0 0 auto;
+          width: 12.5%; /* 100% / 8 */
+        }
+      }
 
     {% from "macros.html" import display_items %}
 
