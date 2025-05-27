@@ -4,7 +4,7 @@
 {% endblock %}
 {% block module %}
 <h2>{{ _('Dashboard')}}</h2>
-<p>{{ _('Use path "<a href="/index">/index</a>" for user home page')}}</p>
+<p>{{ _('Use path "<a href="/index">/index</a>" for user home page') | safe}}</p>
 <h2>{{ _('Settings')}}</h2>
 <form method="POST">
     <!-- Поля формы -->
