@@ -5,74 +5,641 @@
 <!-- Specific CSS goes HERE -->
 {% block stylesheets %}{% endblock stylesheets %}
 
+{% set ns = namespace(available_groups=[]) %}
+{% for group in available_groups %}
+  {% set ns.available_groups = ns.available_groups + [{
+    'id': group.id,
+    'name': group.name,
+    'icon': group.icon,
+    'localized_name': _(group.name)
+  }] %}
+{% endfor %}
+{% set group_order_payload = groups.keys()|list if groups else [] %}
+{% set initial_state = {
+  'availableGroups': ns.available_groups,
+  'groups': groups or {},
+  'groupOrder': group_order_payload,
+  'selectedGroup': selected_group,
+  'saveGroupUrl': save_group_url,
+  'groupingInfo': grouping_info,
+  'translations': {
+    'noObjects': _('No objects in this group'),
+    'root': _('Root')
+  }
+} %}
+
 {% block content %}
 
+<div id="dashboard-app" v-cloak data-initial-state="{{ initial_state | tojson | forceescape }}">
     <!-- [ Main Content ] start -->
     <div class="pcoded-main-container">
         <div class="pcoded-wrapper">
+            {% if not hide_welcome %}
             <div class="jumbotron text-center">
                 <h1>{{ _('Welcome!')}}</h1>
-              </div>
+            </div>
+            {% endif %}
+            
+            <div class="group-ribbon mb-3 px-2" v-if="showGroupRibbon">
+                <div class="btn-group" role="group" aria-label="Group selection">
+                    <button
+                        type="button"
+                        class="btn btn-sm group-switch-btn"
+                        :class="selectedGroup === group.id ? 'btn-primary' : 'btn-outline-primary'"
+                        :data-group-id="group.id"
+                        :aria-pressed="selectedGroup === group.id"
+                        :disabled="loadingGroup && pendingGroup === group.id"
+                        v-for="group in availableGroups"
+                        :key="group.id"
+                        @click="switchGroup(group.id)"
+                    >
+                        <i :class="group.icon" class="me-1" v-if="group.icon"></i>
+                        [[ group.localized_name || group.name ]]
+                    </button>
+                </div>
+            </div>
+      
+            <div
+                class="group-container mb-1"
+                v-for="groupKey in groupOrder"
+                :key="groupKey"
+                :data-group-key="groupKey"
+                :data-has-substitutions="hasSubstitutions(groupKey) ? 'true' : 'false'"
+            >
+                <div
+                    class="group-header d-flex justify-content-between align-items-center p-2 rounded cursor-pointer bg-body-secondary"
+                    role="button"
+                    tabindex="0"
+                    :aria-expanded="!isCollapsed(groupKey)"
+                    @click="toggleGroup(groupKey)"
+                    @keyup.enter.prevent="toggleGroup(groupKey)"
+                    @keyup.space.prevent="toggleGroup(groupKey)"
+                    v-if="selectedGroup !== 'none'"
+                >
+                    <h5 class="mb-0 text-body">
+                        [[ resolveGroupTitle(groupKey) ]]
+                        <span class="badge bg-secondary ms-2" style="font-size: 0.7em;">[[ Object.keys(groupObjects(groupKey)).length ]]</span>
+                    </h5>
+                    <i
+                        class="fas collapse-icon text-body-secondary"
+                        :class="isCollapsed(groupKey) ? 'fa-chevron-right' : 'fa-chevron-down'"
+                    ></i>
+                </div>
+          
+                <div
+                    class="collapse"
+                    :class="{ show: !isCollapsed(groupKey) || selectedGroup === 'none' }"
+                    :id="safeGroupId(groupKey)"
+                >
+                    <div class="row mx-1 mt-2">
+                        <template v-if="hasObjects(groupKey)">
+                            <div
+                                class="col-6 col-sm-4 col-md-3 col-lg-2 col-xl-1-5 col-xxl-1-5 mb-2 px-1"
+                                v-for="(template, objKey) in groupObjects(groupKey)"
+                                :key="objKey"
+                            >
+                                <div class="card p-2" style="height:100%;" :id="'obj:' + objKey" v-html="template"></div>
+                            </div>
+                        </template>
+                        <template v-else-if="hasSubstitutions(groupKey)">
+                            <div class="col-12 text-center py-3 text-muted">
+                                [[ translations.noObjects ]]
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </div>
         </div>
-  
-      <div class="row mx-1">
-        {% for key,template in objects.items()%}
-        <div class="col-6 col-sm-4 col-md-3 col-lg-2 col-xl-1-5 col-xxl-1-5 mb-2 px-1">
-          <div class="card p-2" style="height:100%;" id="obj:{{key}}">
-            {{template|safe}}
-          </div>
-        </div>
-        {%endfor%}
-   
-      </div>
     </div>  
-    <!-- [ Main Content ] end -->     
-    <style>
+    <!-- [ Main Content ] end -->
+</div>
 
-        /* Кастомные классы для колонок */
-      @media (min-width: 2400px) {
-        .col-xxl-1-5 {
-          flex: 0 0 auto;
-          width: 10%; /* 100% / 8 */
-        }
-      }
-      @media (min-width: 1900px) and (max-width: 2399.98px) {
-        .col-xl-1-5 {
-          flex: 0 0 auto;
-          width: 12.5%; /* 100% / 8 */
-        }
-      }
-
-    {% from "macros.html" import display_items %}
-
-    {{ display_items() }}
-
-    <script>
-      // Функция для обновления времени на всех компонентах
-      function updateAllTimes() {
-        var timeComponents = document.querySelectorAll('.time-component'); // Находим все компоненты времени
+<style>
+  [v-cloak] {
+    display: none;
+  }
+  .cursor-pointer {
+    cursor: pointer;
+  }
+  .group-header {
+    transition: background-color 0.2s ease;
+  }
+  .group-header:hover {
+    background-color: var(--bs-tertiary-bg) !important;
+  }
+  [data-bs-theme="dark"] .group-header {
+    border: 1px solid var(--bs-border-color);
+  }
+  /* Кастомные классы для колонок */
+  @media (min-width: 2400px) {
+    .col-xxl-1-5 {
+      flex: 0 0 auto;
+      width: 10%; /* 100% / 8 */
+    }
+  }
+  @media (min-width: 1900px) and (max-width: 2399.98px) {
+    .col-xl-1-5 {
+      flex: 0 0 auto;
+      width: 12.5%; /* 100% / 8 */
+    }
+  }
+</style>
     
-        // Обновляем время на каждом компоненте
-        timeComponents.forEach(function(component) {
-          // Получаем текущее время
-          var currentTime = new Date();
-          // Получаем начальное время из атрибута data-start-time
-          var startTime = new Date(component.dataset.startTime);
-          // Вычисляем разницу между текущим временем и начальным временем
-          var elapsedTime = currentTime - startTime;
-          // Обновляем время на компоненте
-          component.textContent = formatTimeDiff(elapsedTime);
-        });
-      }
-    
-      // Обновляем время каждую секунду
-      setInterval(updateAllTimes, 1000);
-    
-      // Запускаем функцию для обновления времени при загрузке страницы
-      updateAllTimes();
-    </script>
+{% from "macros.html" import display_items %}
+
+{{ display_items() }}
 
 {% endblock content %}
 
 <!-- Specific Page JS goes HERE  -->
-{% block javascripts %}{% endblock javascripts %}
+{% block javascripts %}
+<script src="{{ config.ASSETS_ROOT }}/plugins/vue/vue@2.js"></script>
+<script>
+(function() {
+  function getInitialState(mountPoint) {
+    if (!mountPoint) {
+      return {};
+    }
+    try {
+      var payload = mountPoint.getAttribute('data-initial-state');
+      return payload ? JSON.parse(payload) : {};
+    } catch (error) {
+      console.error('Dashboard: Failed to parse initial state payload', error);
+      return {};
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', function() {
+    var mountPoint = document.getElementById('dashboard-app');
+    if (!mountPoint || !window.Vue) {
+      return;
+    }
+
+    var initialState = getInitialState(mountPoint);
+
+    new Vue({
+      el: '#dashboard-app',
+      delimiters: ['[[', ']]'],
+      data: function() {
+        return {
+          availableGroups: initialState.availableGroups || [],
+          groups: initialState.groups || {},
+          groupOrder: initialState.groupOrder && initialState.groupOrder.length ? initialState.groupOrder : Object.keys(initialState.groups || {}),
+          selectedGroup: initialState.selectedGroup,
+          saveGroupUrl: initialState.saveGroupUrl,
+          groupingInfo: initialState.groupingInfo,
+          translations: initialState.translations,
+          collapseStates: {},
+          loadingGroup: false,
+          pendingGroup: null,
+          subscriptionTimeout: null,
+          objectSubscriptionTimeout: null,
+          subscribedProperties: {},
+          subscribedObjects: {},
+          timeUpdateInterval: null,
+          getGroupUrl: '/admin/Dashboard/get_object_group',
+          changeObjectListenerAttached: false,
+          groupingListenerAttached: false
+        };
+      },
+      computed: {
+        showGroupRibbon: function() {
+          return (this.availableGroups || []).length > 1;
+        }
+      },
+      created: function() {
+        this.normalizeInitialGroups();
+        this.loadCollapseStates();
+      },
+      mounted: function() {
+        this.initializeTimeUpdates();
+        this.setupGroupingIntegration();
+        this.setupObjectUpdates();
+        this.$nextTick(function() {
+          if (typeof subscribe === 'function') {
+            subscribe();
+          }
+        });
+      },
+      beforeDestroy: function() {
+        if (this.timeUpdateInterval) {
+          clearInterval(this.timeUpdateInterval);
+        }
+      },
+      methods: {
+        normalizeInitialGroups: function() {
+          var _this = this;
+          Object.keys(this.groups || {}).forEach(function(key) {
+            var group = _this.groups[key] || {};
+            if (!group.objects) {
+              _this.$set(group, 'objects', {});
+            }
+            _this.$set(_this.groups, key, group);
+          });
+          this.sortGroupOrder();
+        },
+        groupObjects: function(groupKey) {
+          var group = this.groups[groupKey];
+          var objects = group && group.objects ? group.objects : {};
+          // Sort objects by key
+          var sortedKeys = Object.keys(objects).sort(function(a, b) {
+            return a.toLowerCase().localeCompare(b.toLowerCase());
+          });
+          var sortedObjects = {};
+          sortedKeys.forEach(function(key) {
+            sortedObjects[key] = objects[key];
+          });
+          return sortedObjects;
+        },
+        hasObjects: function(groupKey) {
+          return Object.keys(this.groupObjects(groupKey)).length > 0;
+        },
+        hasSubstitutions: function(groupKey) {
+          var group = this.groups[groupKey];
+          return !!(group && (group.has_substitutions || group.has_substitutions === true));
+        },
+        resolveGroupTitle: function(groupKey) {
+          var group = this.groups[groupKey];
+          if (!group) {
+            return groupKey;
+          }
+          if (group.title) {
+            return group.title;
+          }
+          if (groupKey !== 'root' && group['class']) {
+            return group['class'].description || group['class'].name || groupKey;
+          }
+          return this.translations.root || 'Root';
+        },
+        safeGroupId: function(groupKey) {
+          if (!groupKey) {
+            return 'group-root';
+          }
+          return 'group-' + (String(groupKey).replace(/[^a-zA-Z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'default');
+        },
+        getGroupSortLabel: function(groupKey) {
+          return (this.resolveGroupTitle(groupKey) || '').toLocaleLowerCase();
+        },
+        sortGroupOrder: function() {
+          var _this2 = this;
+          var sorted = (this.groupOrder || []).slice().sort(function(a, b) {
+            return _this2.getGroupSortLabel(a).localeCompare(_this2.getGroupSortLabel(b), undefined, { sensitivity: 'base' });
+          });
+          this.groupOrder = sorted;
+        },
+        collapseStorageKey: function(key) {
+          return 'dashboardGroupState_' + key;
+        },
+        loadCollapseStates: function() {
+          var _this3 = this;
+          this.groupOrder.forEach(function(key) {
+            var stored = localStorage.getItem(_this3.collapseStorageKey(key));
+            _this3.$set(_this3.collapseStates, key, stored === 'collapsed');
+          });
+        },
+        toggleGroup: function(key) {
+          var isCollapsed = this.isCollapsed(key);
+          this.$set(this.collapseStates, key, !isCollapsed);
+          localStorage.setItem(this.collapseStorageKey(key), !isCollapsed ? 'collapsed' : 'expanded');
+        },
+        isCollapsed: function(key) {
+          return !!this.collapseStates[key];
+        },
+        switchGroup: function(groupId) {
+          var _this4 = this;
+          if (!this.saveGroupUrl || !groupId) {
+            return;
+          }
+          this.loadingGroup = true;
+          this.pendingGroup = groupId;
+          this.selectedGroup = groupId;
+          fetch(this.saveGroupUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            credentials: 'same-origin',
+            body: JSON.stringify({ group_id: groupId })
+          })
+            .then(function(response) {
+              var contentType = response.headers.get('content-type');
+              if (!contentType || contentType.indexOf('application/json') === -1) {
+                throw new Error('Unexpected response type');
+              }
+              return response.json();
+            })
+            .then(function(data) {
+              if (data && data.success) {
+                _this4.refreshData();
+              } else {
+                var message = data && data.error ? data.error : 'Failed to save group selection';
+                alert(message);
+                _this4.loadingGroup = false;
+                _this4.pendingGroup = null;
+              }
+            })
+            .catch(function(error) {
+              console.error('Dashboard: Error saving group selection:', error);
+              alert('Failed to save group selection. Please try again.');
+              _this4.loadingGroup = false;
+              _this4.pendingGroup = null;
+            });
+        },
+        refreshData: function() {
+          var _this = this;
+          fetch(window.location.pathname + '?json=1', {
+            method: 'GET',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            credentials: 'same-origin'
+          })
+            .then(function(response) { return response.json(); })
+            .then(function(data) {
+              // Create new object references to force reactivity
+              _this.groups = Object.assign({}, data.groups || {});
+              _this.selectedGroup = data.selected_group;
+              _this.groupingInfo = data.grouping_info;
+              
+              // Recalculate group order
+              _this.groupOrder = Object.keys(_this.groups);
+              _this.normalizeInitialGroups();
+              
+              // Reset and re-init subscriptions
+              _this.subscribedProperties = {};
+              _this.subscribedObjects = {};
+              _this.scheduleSubscriptionUpdate();
+              _this.scheduleObjectSubscription();
+              _this.initializeTimeUpdates();
+            })
+            .catch(function(err) {
+              console.error('Dashboard: Failed to refresh data', err);
+              window.location.reload();
+            })
+            .finally(function() {
+              _this.loadingGroup = false;
+              _this.pendingGroup = null;
+            });
+        },
+        initializeTimeUpdates: function() {
+          var _this5 = this;
+          var updateAllTimes = function() {
+            if (typeof formatTimeDiff !== 'function') {
+              return;
+            }
+            document.querySelectorAll('.time-component').forEach(function(component) {
+              if (!component.dataset.startTime) {
+                return;
+              }
+              var elapsedTime = Date.now() - new Date(component.dataset.startTime).getTime();
+              component.textContent = formatTimeDiff(elapsedTime);
+            });
+          };
+          updateAllTimes();
+          this.timeUpdateInterval = setInterval(updateAllTimes, 1000);
+          window.addEventListener('visibilitychange', function() {
+            if (!document.hidden) {
+              updateAllTimes();
+            }
+          });
+        },
+        setupGroupingIntegration: function() {
+          var _this6 = this;
+          if (!this.groupingInfo || !this.groupingInfo.property_name) {
+            return;
+          }
+          var ensureSocket = function() {
+            if (typeof socket === 'undefined' || !socket) {
+              setTimeout(ensureSocket, 500);
+              return;
+            }
+            if (!_this6.groupingListenerAttached) {
+              socket.on('changeProperty', _this6.handleGroupingPropertyChange);
+              _this6.groupingListenerAttached = true;
+            }
+            _this6.scheduleSubscriptionUpdate();
+          };
+          ensureSocket();
+        },
+        setupObjectUpdates: function() {
+          var _this7 = this;
+          var ensureSocket = function() {
+            if (typeof socket === 'undefined' || !socket) {
+              setTimeout(ensureSocket, 500);
+              return;
+            }
+            if (!_this7.changeObjectListenerAttached) {
+              socket.on('changeObject', _this7.handleChangeObject);
+              _this7.changeObjectListenerAttached = true;
+            }
+            _this7.scheduleObjectSubscription();
+          };
+          ensureSocket();
+        },
+        scheduleSubscriptionUpdate: function() {
+          var _this8 = this;
+          if (this.subscriptionTimeout) {
+            clearTimeout(this.subscriptionTimeout);
+          }
+          this.subscriptionTimeout = setTimeout(function() {
+            _this8.subscribeToGroupingProperties();
+          }, 200);
+        },
+        subscribeToGroupingProperties: function() {
+          if (typeof socket === 'undefined' || !socket || !this.groupingInfo) {
+            return;
+          }
+          var propertyName = this.groupingInfo.property_name;
+          var propertyList = [];
+          var _this9 = this;
+          this.groupOrder.forEach(function(groupKey) {
+            var group = _this9.groups[groupKey];
+            if (!group || !group.objects) {
+              return;
+            }
+            Object.keys(group.objects).forEach(function(objectName) {
+              var propertyFullName = objectName + '.' + propertyName;
+              if (!_this9.subscribedProperties[propertyFullName]) {
+                _this9.subscribedProperties[propertyFullName] = true;
+                propertyList.push(propertyFullName);
+              }
+            });
+          });
+          if (propertyList.length) {
+            socket.emit('subscribeProperties', propertyList);
+          }
+        },
+        scheduleObjectSubscription: function() {
+          var _this10 = this;
+          if (this.objectSubscriptionTimeout) {
+            clearTimeout(this.objectSubscriptionTimeout);
+          }
+          this.objectSubscriptionTimeout = setTimeout(function() {
+            _this10.subscribeToObjects();
+          }, 200);
+        },
+        subscribeToObjects: function() {
+          if (typeof socket === 'undefined' || !socket) {
+            return;
+          }
+          var objectList = [];
+          var _this11 = this;
+          this.groupOrder.forEach(function(groupKey) {
+            var group = _this11.groups[groupKey];
+            if (!group || !group.objects) {
+              return;
+            }
+            Object.keys(group.objects).forEach(function(objectName) {
+              if (!_this11.subscribedObjects[objectName]) {
+                _this11.subscribedObjects[objectName] = true;
+                objectList.push(objectName);
+              }
+            });
+          });
+          if (objectList.length) {
+            socket.emit('subscribeObjects', objectList);
+          }
+        },
+        handleGroupingPropertyChange: function(msg) {
+          if (!msg || !msg.property || !this.groupingInfo) {
+            return;
+          }
+          var parts = msg.property.split('.');
+          if (parts.length !== 2) {
+            return;
+          }
+          var objectName = parts[0];
+          var propertyName = parts[1];
+          if (propertyName !== this.groupingInfo.property_name) {
+            return;
+          }
+          this.fetchObjectGroup(objectName);
+        },
+        fetchObjectGroup: function(objectName) {
+          var _this12 = this;
+          if (!objectName) {
+            return;
+          }
+          fetch(this.getGroupUrl + '?object_name=' + encodeURIComponent(objectName), {
+            method: 'GET',
+            credentials: 'same-origin'
+          })
+            .then(function(response) {
+              if (!response.ok) {
+                throw new Error('Failed to get object group');
+              }
+              return response.json();
+            })
+            .then(function(data) {
+              if (!data.success) {
+                console.error('Dashboard: Error getting object group:', data.error);
+                return;
+              }
+              if (data.hidden || data.no_grouping) {
+                _this12.removeObject(objectName);
+                return;
+              }
+              _this12.moveObjectToGroup(objectName, data.group_key, data.group_title, data.has_substitutions);
+            })
+            .catch(function(error) {
+              console.error('Dashboard: Error handling grouping property change:', error);
+            });
+        },
+        handleChangeObject: function(msg) {
+          if (!msg || !msg.object) {
+            return;
+          }
+          var groupKey = this.findGroupKeyByObject(msg.object);
+          if (!groupKey) {
+            console.warn('Dashboard: changeObject target not found', msg.object);
+            return;
+          }
+          var group = this.groups[groupKey];
+          if (group && group.objects) {
+            this.$set(group.objects, msg.object, msg.value || '');
+          }
+        },
+        removeObject: function(objectName) {
+          var groupKey = this.findGroupKeyByObject(objectName);
+          if (!groupKey) {
+            return;
+          }
+          var group = this.groups[groupKey];
+          if (group && group.objects && Object.prototype.hasOwnProperty.call(group.objects, objectName)) {
+            this.$delete(group.objects, objectName);
+            this.cleanupGroupIfEmpty(groupKey);
+            this.scheduleSubscriptionUpdate();
+          }
+        },
+        findGroupKeyByObject: function(objectName) {
+          for (var i = 0; i < this.groupOrder.length; i += 1) {
+            var key = this.groupOrder[i];
+            var group = this.groups[key];
+            if (group && group.objects && Object.prototype.hasOwnProperty.call(group.objects, objectName)) {
+              return key;
+            }
+          }
+          return null;
+        },
+        moveObjectToGroup: function(objectName, newGroupKey, newGroupTitle, hasSubstitutions) {
+          var normalizedKey = this.normalizeGroupKey(newGroupKey);
+          if (!normalizedKey) {
+            return;
+          }
+          var currentGroupKey = this.findGroupKeyByObject(objectName);
+          if (!currentGroupKey) {
+            return;
+          }
+          var currentGroup = this.groups[currentGroupKey];
+          var templateContent = currentGroup.objects[objectName];
+          if (!templateContent || currentGroupKey === normalizedKey) {
+            return;
+          }
+          var targetGroup = this.ensureGroup(normalizedKey, newGroupTitle, hasSubstitutions);
+          this.$set(targetGroup.objects, objectName, templateContent);
+          this.$delete(currentGroup.objects, objectName);
+          this.cleanupGroupIfEmpty(currentGroupKey);
+          this.scheduleSubscriptionUpdate();
+        },
+        ensureGroup: function(groupKey, groupTitle, hasSubstitutions) {
+          var normalizedKey = this.normalizeGroupKey(groupKey);
+          if (!normalizedKey) {
+            return null;
+          }
+          if (!this.groups[normalizedKey]) {
+            this.$set(this.groups, normalizedKey, {
+              title: groupTitle || normalizedKey,
+              has_substitutions: !!hasSubstitutions,
+              objects: {}
+            });
+            this.groupOrder.push(normalizedKey);
+            this.$set(this.collapseStates, normalizedKey, false);
+            this.sortGroupOrder();
+          }
+          return this.groups[normalizedKey];
+        },
+        cleanupGroupIfEmpty: function(groupKey) {
+          var group = this.groups[groupKey];
+          if (!group) {
+            return;
+          }
+          var hasObjects = group.objects && Object.keys(group.objects).length > 0;
+          if (hasObjects || this.hasSubstitutions(groupKey)) {
+            return;
+          }
+          this.groupOrder = this.groupOrder.filter(function(key) {
+            return key !== groupKey;
+          });
+          this.$delete(this.groups, groupKey);
+          localStorage.removeItem(this.collapseStorageKey(groupKey));
+        },
+        normalizeGroupKey: function(key) {
+          if (key === null || key === undefined) {
+            return '';
+          }
+          return String(key).trim();
+        }
+      }
+    });
+  });
+})();
+</script>
+{% endblock javascripts %}

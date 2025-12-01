@@ -1,18 +1,364 @@
 {% extends "layouts/module_admin.html" %}
 {% block breadcrumb %}
-<li class="breadcrumb-item"><a href="Dasboard">{{ _('Dashboard')}}</a></li>
+<li class="breadcrumb-item"><a href="Dashboard">{{ _('Dashboard')}}</a></li>
 {% endblock %}
 {% block module %}
-<h2>{{ _('Dashboard')}}</h2>
-<p>{{ _('Use path "<a href="/index">/index</a>" for user home page') | safe}}</p>
-<h2>{{ _('Settings')}}</h2>
-<form method="POST">
-    <!-- Поля формы -->
-    {{ form.hidden_tag() }}
-    <div class="mb-3">
-        <label class="form-label">{{ _('Group objects') }}</label>
-        {{ form.group(class="form-check-input") }}
+
+<div class="row">
+    <div class="col-xl-12">
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-transparent border-bottom pt-3 pb-2">
+                <h5 class="card-title text-primary"><i class="fas fa-cogs me-2"></i>{{ _('Dashboard Settings') }}</h5>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-light border-start border-4 border-info shadow-sm" role="alert">
+                    <i class="fas fa-info-circle text-info me-2"></i> {{ _('Use path "<a href="/index" class="alert-link">/index</a>" for user home page') | safe}}
+                </div>
+                
+                {% if form.errors %}
+                <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                    <strong><i class="fas fa-exclamation-triangle me-2"></i>{{ _('Form validation errors:') }}</strong>
+                    <ul class="mb-0 mt-2">
+                        {% for field, errors in form.errors.items() %}
+                        <li>{{ field }}: {{ errors|join(', ') }}</li>
+                        {% endfor %}
+                    </ul>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+                {% endif %}
+
+                <form method="POST" id="settings-form">
+                    {{ form.hidden_tag() }}
+                    
+                    <!-- Global Settings -->
+                    <div class="card bg-body-tertiary mb-4 border-0">
+                        <div class="card-body">
+                            <h6 class="card-subtitle mb-3 text-body-secondary">{{ _('General Settings') }}</h6>
+                            <div class="form-check form-switch mb-3">
+                                {{ form.group(class="form-check-input", role="switch") }}
+                                <label class="form-check-label fw-bold" for="{{ form.group.id }}">
+                                    {{ _('Enable Grouping by Class') }}
+                                </label>
+                                <small class="text-body-secondary d-block mt-1">{{ _('If enabled, add grouped by class') }}</small>
+                            </div>
+                            <div class="form-check form-switch mb-3">
+                                {{ form.hide_welcome(class="form-check-input", role="switch") }}
+                                <label class="form-check-label fw-bold" for="{{ form.hide_welcome.id }}">
+                                    {{ _('Hide Welcome Message') }}
+                                </label>
+                                <small class="text-body-secondary d-block mt-1">{{ _('If enabled, the welcome banner will be hidden.') }}</small>
+                            </div>
+                            <div class="form-check form-switch">
+                                {{ form.hide_no_grouping(class="form-check-input", role="switch") }}
+                                <label class="form-check-label fw-bold" for="{{ form.hide_no_grouping.id }}">
+                                    {{ _('Hide "No Grouping" Option') }}
+                                </label>
+                                <small class="text-body-secondary d-block mt-1">{{ _('If enabled, the "No Grouping" option will be removed from available groups.') }}</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h5 class="mb-0 text-body-secondary"><i class="fas fa-layer-group me-2"></i>{{ _('Custom Grouping Configurations') }}</h5>
+                        <button type="button" class="btn btn-success btn-sm shadow-sm" id="add-group">
+                            <i class="fas fa-plus me-1"></i> {{ _('Add Group') }}
+                        </button>
+                    </div>
+
+                    <div id="groups-container">
+                        {% for group_form in form.groups %}
+                        <div class="card mb-3 group-item shadow-sm border-start-primary" data-group-index="{{ loop.index0 }}">
+                            <div class="card-header d-flex justify-content-between align-items-center py-2 bg-body">
+                                <span class="fw-bold group-header-title text-body">
+                                    <i class="fas fa-folder me-2 text-warning"></i>
+                                    <span class="title-text">{{ group_form.group_name.data or _('New Group') }}</span>
+                                </span>
+                                <button type="button" class="btn btn-outline-danger btn-sm remove-group rounded-circle" title="{{ _('Remove Group') }}" style="width: 32px; height: 32px; padding: 0;">
+                                    <i class="fas fa-trash-alt"></i>
+                                </button>
+                            </div>
+                            <div class="card-body bg-body-tertiary bg-opacity-10">
+                                <div class="row g-3">
+                                    <!-- Primary Info -->
+                                    <div class="col-md-4">
+                                        <label class="form-label fw-bold small text-uppercase text-body-secondary">{{ _('Group Name') }}</label>
+                                        <div class="input-group">
+                                            <span class="input-group-text bg-body"><i class="fas fa-heading text-secondary"></i></span>
+                                            <input type="text" 
+                                                   name="groups-{{ loop.index0 }}-group_name" 
+                                                   class="form-control group-name-input" 
+                                                   value="{{ group_form.group_name.data or '' }}" 
+                                                   placeholder="{{ _('My Group') }}"
+                                                   required />
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label fw-bold small text-uppercase text-body-secondary">{{ _('Icon') }}</label>
+                                        <div class="input-group">
+                                            <span class="input-group-text bg-body"><i class="fas fa-icons text-secondary"></i></span>
+                                            <input type="text" 
+                                                   name="groups-{{ loop.index0 }}-group_icon" 
+                                                   class="form-control" 
+                                                   value="{{ group_form.group_icon.data or '' }}" 
+                                                   placeholder="fas fa-layer-group" />
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label fw-bold small text-uppercase text-body-secondary">{{ _('Property Name') }}</label>
+                                        <div class="input-group">
+                                            <span class="input-group-text bg-body"><i class="fas fa-tag text-secondary"></i></span>
+                                            <input type="text" 
+                                                   name="groups-{{ loop.index0 }}-property_name" 
+                                                   class="form-control" 
+                                                   placeholder="e.g. state, room" 
+                                                   value="{{ group_form.property_name.data or '' }}" />
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Advanced Info -->
+                                    <div class="col-md-6">
+                                        <label class="form-label small text-uppercase text-body-secondary">
+                                            {{ _('Object Property') }} 
+                                            <i class="fas fa-info-circle text-info ms-1" data-bs-toggle="tooltip" title="{{ _('If the property value is another object name, specify which property of THAT object to use.') }}"></i>
+                                        </label>
+                                        <input type="text" 
+                                               name="groups-{{ loop.index0 }}-object_property" 
+                                               class="form-control form-control-sm" 
+                                               placeholder="{{ _('Optional') }}" 
+                                               value="{{ group_form.object_property.data or '' }}" />
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label small text-uppercase text-body-secondary">
+                                            {{ _('Value Substitutions') }}
+                                            <i class="fas fa-info-circle text-info ms-1" data-bs-toggle="tooltip" title="{{ _('Format: 0-Online,1-Offline') }}"></i>
+                                        </label>
+                                        <input type="text" 
+                                               name="groups-{{ loop.index0 }}-value_substitutions" 
+                                               class="form-control form-control-sm" 
+                                               placeholder="k-v,k-v" 
+                                               value="{{ group_form.value_substitutions.data or '' }}" />
+                                    </div>
+
+                                    <!-- Options -->
+                                    <div class="col-12">
+                                        <div class="form-check form-switch">
+                                            <input type="checkbox" 
+                                                   name="groups-{{ loop.index0 }}-show_undefined" 
+                                                   class="form-check-input" 
+                                                   id="show_undefined_{{ loop.index0 }}"
+                                                   {% if group_form.show_undefined.data %}checked{% endif %} />
+                                            <label class="form-check-label" for="show_undefined_{{ loop.index0 }}">
+                                                {{ _('Show objects with undefined property value') }}
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end mt-4">
+                        <button type="submit" class="btn btn-primary px-4 shadow-sm">
+                            <i class="fas fa-save me-2"></i> {{ _('Save')}}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
     </div>
-    <button type="submit" class="btn btn-primary">{{ _('Save')}}</button>
-</form>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const container = document.getElementById('groups-container');
+    const addBtn = document.getElementById('add-group');
+    
+    // Calculate next index based on existing items
+    let groupIndex = document.querySelectorAll('.group-item').length;
+    
+    // Function to update card header when name changes
+    function attachNameListener(element) {
+        element.addEventListener('input', function(e) {
+            const card = e.target.closest('.group-item');
+            const titleSpan = card.querySelector('.title-text');
+            titleSpan.textContent = e.target.value || "{{ _('New Group') }}";
+        });
+    }
+
+    // Attach to existing
+    document.querySelectorAll('.group-name-input').forEach(attachNameListener);
+
+    // Initialize tooltips (Bootstrap 5)
+    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
+    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+        if (typeof bootstrap !== 'undefined' && bootstrap.Tooltip) {
+            return new bootstrap.Tooltip(tooltipTriggerEl)
+        }
+    });
+
+    addBtn.addEventListener('click', function() {
+        const groupItem = document.createElement('div');
+        groupItem.className = 'card mb-3 group-item shadow-sm border-start-primary';
+        groupItem.setAttribute('data-group-index', groupIndex);
+        
+        // Use a template literal for the new item
+        groupItem.innerHTML = `
+            <div class="card-header d-flex justify-content-between align-items-center py-2 bg-body">
+                <span class="fw-bold group-header-title text-body">
+                    <i class="fas fa-folder me-2 text-warning"></i>
+                    <span class="title-text">{{ _('New Group') }}</span>
+                </span>
+                <button type="button" class="btn btn-outline-danger btn-sm remove-group rounded-circle" title="{{ _('Remove Group') }}" style="width: 32px; height: 32px; padding: 0;">
+                    <i class="fas fa-trash-alt"></i>
+                </button>
+            </div>
+            <div class="card-body bg-body-tertiary bg-opacity-10">
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label fw-bold small text-uppercase text-body-secondary">{{ _('Group Name') }}</label>
+                        <div class="input-group">
+                            <span class="input-group-text bg-body"><i class="fas fa-heading text-secondary"></i></span>
+                            <input type="text" 
+                                   name="groups-${groupIndex}-group_name" 
+                                   class="form-control group-name-input" 
+                                   placeholder="{{ _('My Group') }}"
+                                   required />
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label fw-bold small text-uppercase text-body-secondary">{{ _('Icon') }}</label>
+                        <div class="input-group">
+                            <span class="input-group-text bg-body"><i class="fas fa-icons text-secondary"></i></span>
+                            <input type="text" 
+                                   name="groups-${groupIndex}-group_icon" 
+                                   class="form-control" 
+                                   placeholder="fas fa-layer-group" />
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label fw-bold small text-uppercase text-body-secondary">{{ _('Property Name') }}</label>
+                        <div class="input-group">
+                            <span class="input-group-text bg-body"><i class="fas fa-tag text-secondary"></i></span>
+                            <input type="text" 
+                                   name="groups-${groupIndex}-property_name" 
+                                   class="form-control" 
+                                   placeholder="e.g. state, room" />
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small text-uppercase text-body-secondary">
+                            {{ _('Object Property') }} 
+                            <i class="fas fa-info-circle text-info ms-1" data-bs-toggle="tooltip" title="{{ _('If the property value is another object name, specify which property of THAT object to use.') }}"></i>
+                        </label>
+                        <input type="text" 
+                               name="groups-${groupIndex}-object_property" 
+                               class="form-control form-control-sm" 
+                               placeholder="{{ _('Optional') }}" />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small text-uppercase text-body-secondary">
+                            {{ _('Value Substitutions') }}
+                            <i class="fas fa-info-circle text-info ms-1" data-bs-toggle="tooltip" title="{{ _('Format: 0-Online,1-Offline') }}"></i>
+                        </label>
+                        <input type="text" 
+                               name="groups-${groupIndex}-value_substitutions" 
+                               class="form-control form-control-sm" 
+                               placeholder="0-Online,1-Offline" />
+                    </div>
+                    <div class="col-12">
+                        <div class="form-check form-switch">
+                            <input type="checkbox" 
+                                   name="groups-${groupIndex}-show_undefined" 
+                                   class="form-check-input" 
+                                   id="show_undefined_${groupIndex}" />
+                            <label class="form-check-label" for="show_undefined_${groupIndex}">
+                                {{ _('Show objects with undefined property value') }}
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        container.appendChild(groupItem);
+        
+        // Attach listener to the new input
+        attachNameListener(groupItem.querySelector('.group-name-input'));
+        
+        // Re-init tooltips for new elements
+        if (typeof bootstrap !== 'undefined' && bootstrap.Tooltip) {
+            groupItem.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function(el) {
+                new bootstrap.Tooltip(el);
+            });
+        }
+        
+        groupIndex++;
+    });
+    
+    // Event delegation for remove buttons
+    container.addEventListener('click', function(e) {
+        const btn = e.target.closest('.remove-group');
+        if (btn) {
+            if (confirm("{{ _('Are you sure you want to delete this group?') }}")) {
+                const item = btn.closest('.group-item');
+                // Destroy tooltips before removing to prevent memory leaks (optional but good practice)
+                if (typeof bootstrap !== 'undefined' && bootstrap.Tooltip) {
+                    item.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function(el) {
+                        const tooltip = bootstrap.Tooltip.getInstance(el);
+                        if (tooltip) tooltip.dispose();
+                    });
+                }
+                item.remove();
+                reindexGroups();
+            }
+        }
+    });
+
+    function reindexGroups() {
+        const items = container.querySelectorAll('.group-item');
+        items.forEach((item, index) => {
+            item.setAttribute('data-group-index', index);
+            
+            // Update inputs names
+            item.querySelectorAll('input, select, textarea').forEach(input => {
+                if (input.name) {
+                    input.name = input.name.replace(/groups-\d+-/, `groups-${index}-`);
+                }
+                if (input.id) {
+                    input.id = input.id.replace(/_\d+$/, `_${index}`);
+                }
+            });
+            
+            // Update labels
+            item.querySelectorAll('label').forEach(label => {
+                if (label.getAttribute('for')) {
+                    label.setAttribute('for', label.getAttribute('for').replace(/_\d+$/, `_${index}`));
+                }
+            });
+        });
+        groupIndex = items.length;
+    }
+});
+</script>
+
+<style>
+.border-start-primary {
+    border-left: 4px solid var(--bs-primary, #0d6efd) !important;
+}
+.group-header-title {
+    font-size: 1.05rem;
+}
+.group-item {
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.group-item:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 .5rem 1rem rgba(0,0,0,.15)!important;
+}
+.form-label.small {
+    font-size: 0.75rem;
+    letter-spacing: 0.5px;
+}
+</style>
 {% endblock %}
