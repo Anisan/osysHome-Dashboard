@@ -18,7 +18,7 @@ class Dashboard(BasePlugin):
         super().__init__(app,__name__)
         self.title = "Dashboard"
         self.description = """Simple dashboard"""
-        self.version = 0.3
+        self.version = 0.4
         self.category = "App"
         self.author = "Eraser"
 
@@ -142,11 +142,11 @@ class Dashboard(BasePlugin):
         if not property_name:
             return None
         
-        # Проверяем наличие свойства
-        if property_name not in obj.properties:
-            return None
-        
+        # Проверяем наличие свойства      
         try:
+            if property_name not in obj.properties:
+                return None
+                
             value = obj.getProperty(property_name)
             if value is None:
                 return None
@@ -270,6 +270,8 @@ class Dashboard(BasePlugin):
                     show_undefined = group_config.get('show_undefined', False)
                     
                     for key, obj in sorted(objects_storage.items(), key=lambda x: x[0].lower()):
+                        if property_name not in obj.properties:
+                            continue
                         render = obj.render()
                         if render:
                             group_value = self._get_group_value(obj, group_config)
