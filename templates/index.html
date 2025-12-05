@@ -98,7 +98,7 @@
                                 v-for="(template, objKey) in groupObjects(groupKey)"
                                 :key="objKey"
                             >
-                                <div class="card p-2" style="height:100%;" :id="'obj:' + objKey" v-html="template"></div>
+                                <div class="card p-2" style="height:100%;" :id="'obj:' + objKey" v-safe-html="template"></div>
                             </div>
                         </template>
                         <template v-else-if="hasSubstitutions(groupKey)">
@@ -176,6 +176,36 @@
     }
 
     var initialState = getInitialState(mountPoint);
+
+    // Directive to execute scripts in inserted HTML
+    Vue.directive('safe-html', {
+      bind: function(el, binding) {
+        setAndExecute(el, binding.value);
+      },
+      update: function(el, binding) {
+        if (binding.value !== binding.oldValue) {
+          setAndExecute(el, binding.value);
+        }
+      }
+    });
+
+    function setAndExecute(el, html) {
+      el.innerHTML = html || '';
+      var scripts = el.querySelectorAll('script');
+      for (var i = 0; i < scripts.length; i++) {
+        var oldScript = scripts[i];
+        var newScript = document.createElement('script');
+        
+        Array.prototype.slice.call(oldScript.attributes).forEach(function(attr) {
+          newScript.setAttribute(attr.name, attr.value);
+        });
+        
+        newScript.appendChild(document.createTextNode(oldScript.innerHTML));
+        if (oldScript.parentNode) {
+            oldScript.parentNode.replaceChild(newScript, oldScript);
+        }
+      }
+    }
 
     new Vue({
       el: '#dashboard-app',
