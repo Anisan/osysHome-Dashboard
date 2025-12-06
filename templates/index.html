@@ -98,7 +98,7 @@
                                 v-for="(template, objKey) in groupObjects(groupKey)"
                                 :key="objKey"
                             >
-                                <div class="card p-2" style="height:100%;" :id="'obj:' + objKey" v-safe-html="template"></div>
+                                <div class="card p-2" style="height:100%;" :id="'dashboard-obj:' + objKey" v-safe-html="template"></div>
                             </div>
                         </template>
                         <template v-else-if="hasSubstitutions(groupKey)">
@@ -180,6 +180,11 @@
     // Directive to execute scripts in inserted HTML
     Vue.directive('safe-html', {
       bind: function(el, binding) {
+        // Store initial value
+        el._safeHtmlValue = binding.value;
+      },
+      inserted: function(el, binding) {
+        // Execute scripts when element is inserted into DOM
         setAndExecute(el, binding.value);
       },
       update: function(el, binding) {
@@ -190,21 +195,133 @@
     });
 
     function setAndExecute(el, html) {
-      el.innerHTML = html || '';
-      var scripts = el.querySelectorAll('script');
-      for (var i = 0; i < scripts.length; i++) {
-        var oldScript = scripts[i];
-        var newScript = document.createElement('script');
-        
-        Array.prototype.slice.call(oldScript.attributes).forEach(function(attr) {
-          newScript.setAttribute(attr.name, attr.value);
-        });
-        
-        newScript.appendChild(document.createTextNode(oldScript.innerHTML));
-        if (oldScript.parentNode) {
-            oldScript.parentNode.replaceChild(newScript, oldScript);
-        }
+      if (!html) {
+        el.innerHTML = '';
+        return;
       }
+      
+      // Check if scripts were already executed for this content
+      var contentHash = el.getAttribute('data-content-hash');
+      var newHash = String(html.length) + '_' + (html.substring(0, 50).replace(/[^a-zA-Z0-9]/g, ''));
+      
+      // If content hasn't changed, don't re-execute
+      if (contentHash === newHash && el.hasAttribute('data-scripts-executed')) {
+        return;
+      }
+      
+      el.innerHTML = html || '';
+      el.setAttribute('data-content-hash', newHash);
+      el.removeAttribute('data-scripts-executed');
+      
+      // Use requestAnimationFrame to ensure DOM is ready and scripts execute properly
+      requestAnimationFrame(function() {
+        setTimeout(function() {
+        var scripts = el.querySelectorAll('script');
+        var externalScripts = [];
+        var inlineScripts = [];
+        
+        // Separate external scripts (with src) and inline scripts
+        for (var i = 0; i < scripts.length; i++) {
+          var script = scripts[i];
+          if (script.src || script.getAttribute('src')) {
+            externalScripts.push(script);
+          } else {
+            inlineScripts.push(script);
+          }
+        }
+        
+        // Function to execute inline scripts
+        function executeInlineScripts() {
+          inlineScripts.forEach(function(oldScript) {
+            var newScript = document.createElement('script');
+            
+            // Copy all attributes
+            Array.prototype.slice.call(oldScript.attributes).forEach(function(attr) {
+              newScript.setAttribute(attr.name, attr.value);
+            });
+            
+            // Copy script content
+            if (oldScript.innerHTML) {
+              newScript.appendChild(document.createTextNode(oldScript.innerHTML));
+            }
+            
+            // Replace old script with new one to trigger execution
+            if (oldScript.parentNode) {
+              oldScript.parentNode.replaceChild(newScript, oldScript);
+            } else {
+              el.appendChild(newScript);
+            }
+          });
+          // Mark scripts as executed
+          el.setAttribute('data-scripts-executed', 'true');
+        }
+        
+        // Function to load external scripts sequentially
+        function loadExternalScripts(index) {
+          if (index >= externalScripts.length) {
+            // All external scripts loaded, now execute inline scripts
+            // Use a small delay to ensure modules are fully loaded
+            setTimeout(function() {
+              if (inlineScripts.length > 0) {
+                executeInlineScripts();
+              } else {
+                // Mark scripts as executed even if no inline scripts
+                el.setAttribute('data-scripts-executed', 'true');
+              }
+            }, 100);
+            return;
+          }
+          
+          var oldScript = externalScripts[index];
+          var newScript = document.createElement('script');
+          var isModule = oldScript.type === 'module';
+          var scriptSrc = oldScript.src || oldScript.getAttribute('src');
+          
+          // Copy all attributes
+          Array.prototype.slice.call(oldScript.attributes).forEach(function(attr) {
+            newScript.setAttribute(attr.name, attr.value);
+          });
+          
+          // For module scripts, they execute automatically when appended to DOM
+          // For regular scripts, we need onload/onerror handlers
+          if (!isModule && scriptSrc) {
+            newScript.onload = function() {
+              loadExternalScripts(index + 1);
+            };
+            newScript.onerror = function() {
+              console.error('Failed to load script:', scriptSrc);
+              loadExternalScripts(index + 1);
+            };
+          } else if (isModule && scriptSrc) {
+            // Module scripts don't fire onload reliably, use a timeout
+            // But give them more time to load
+            setTimeout(function() {
+              loadExternalScripts(index + 1);
+            }, 200);
+          } else {
+            // No src, should not happen but handle it
+            loadExternalScripts(index + 1);
+            return;
+          }
+          
+          // Remove old script first
+          if (oldScript.parentNode) {
+            oldScript.parentNode.removeChild(oldScript);
+          }
+          
+          // Append new script to the same parent or to el
+          var parent = oldScript.parentNode || el;
+          parent.appendChild(newScript);
+        }
+        
+        // Start loading external scripts first, then inline scripts
+        if (externalScripts.length > 0) {
+          loadExternalScripts(0);
+        } else {
+          executeInlineScripts();
+        }
+        }, 0);
+      });
     }
 
     new Vue({
@@ -245,11 +362,8 @@
         this.initializeTimeUpdates();
         this.setupGroupingIntegration();
         this.setupObjectUpdates();
-        this.$nextTick(function() {
-          if (typeof subscribe === 'function') {
-            subscribe();
-          }
-        });
+        // Не вызываем глобальную subscribe(), так как Dashboard сам управляет подписками
+        // через setupGroupingIntegration() и setupObjectUpdates()
       },
       beforeDestroy: function() {
         if (this.timeUpdateInterval) {
@@ -393,9 +507,8 @@
               _this.groupOrder = Object.keys(_this.groups);
               _this.normalizeInitialGroups();
               
-              // Reset and re-init subscriptions
-              _this.subscribedProperties = {};
-              _this.subscribedObjects = {};
+              // Методы подписки сами определят, от чего нужно отписаться
+              // и подпишутся на новые объекты/свойства
               _this.scheduleSubscriptionUpdate();
               _this.scheduleObjectSubscription();
               _this.initializeTimeUpdates();
@@ -478,7 +591,9 @@
             return;
           }
           var propertyName = this.groupingInfo.property_name;
-          var propertyList = [];
+          
+          // Определяем, какие свойства нужны сейчас
+          var neededProperties = {};
           var _this9 = this;
           this.groupOrder.forEach(function(groupKey) {
             var group = _this9.groups[groupKey];
@@ -487,12 +602,30 @@
             }
             Object.keys(group.objects).forEach(function(objectName) {
               var propertyFullName = objectName + '.' + propertyName;
-              if (!_this9.subscribedProperties[propertyFullName]) {
-                _this9.subscribedProperties[propertyFullName] = true;
-                propertyList.push(propertyFullName);
-              }
+              neededProperties[propertyFullName] = true;
             });
           });
+          
+          // Отписываемся от свойств, которые больше не нужны
+          var unsubscribeList = [];
+          for (var prop in this.subscribedProperties) {
+            if (this.subscribedProperties.hasOwnProperty(prop) && !neededProperties[prop]) {
+              unsubscribeList.push(prop);
+              delete this.subscribedProperties[prop];
+            }
+          }
+          if (unsubscribeList.length > 0) {
+            socket.emit('unsubscribeProperties', unsubscribeList);
+          }
+          
+          // Подписываемся на новые свойства
+          var propertyList = [];
+          for (var prop in neededProperties) {
+            if (!this.subscribedProperties[prop]) {
+              this.subscribedProperties[prop] = true;
+              propertyList.push(prop);
+            }
+          }
           if (propertyList.length) {
             socket.emit('subscribeProperties', propertyList);
           }
@@ -510,7 +643,9 @@
           if (typeof socket === 'undefined' || !socket) {
             return;
           }
-          var objectList = [];
+          
+          // Определяем, какие объекты нужны сейчас
+          var neededObjects = {};
           var _this11 = this;
           this.groupOrder.forEach(function(groupKey) {
             var group = _this11.groups[groupKey];
@@ -518,12 +653,30 @@
               return;
             }
             Object.keys(group.objects).forEach(function(objectName) {
-              if (!_this11.subscribedObjects[objectName]) {
-                _this11.subscribedObjects[objectName] = true;
-                objectList.push(objectName);
-              }
+              neededObjects[objectName] = true;
             });
           });
+          
+          // Отписываемся от объектов, которые больше не нужны
+          var unsubscribeList = [];
+          for (var obj in this.subscribedObjects) {
+            if (this.subscribedObjects.hasOwnProperty(obj) && !neededObjects[obj]) {
+              unsubscribeList.push(obj);
+              delete this.subscribedObjects[obj];
+            }
+          }
+          if (unsubscribeList.length > 0) {
+            socket.emit('unsubscribeObjects', unsubscribeList);
+          }
+          
+          // Подписываемся на новые объекты
+          var objectList = [];
+          for (var obj in neededObjects) {
+            if (!this.subscribedObjects[obj]) {
+              this.subscribedObjects[obj] = true;
+              objectList.push(obj);
+            }
+          }
           if (objectList.length) {
             socket.emit('subscribeObjects', objectList);
           }
@@ -541,13 +694,98 @@
           if (propertyName !== this.groupingInfo.property_name) {
             return;
           }
-          this.fetchObjectGroup(objectName);
+          
+          // Если используется object_property, msg.value - это имя объекта
+          // В этом случае нужно получить свойство этого объекта, что требует запроса
+          if (this.groupingInfo.object_property) {
+            // Для object_property делаем запрос, так как нужно получить свойство объекта
+            this.fetchObjectGroup(objectName);
+            return;
+          }
+          
+          // Оптимизация: используем значение из веб-сокета напрямую
+          var groupValue = msg.value;
+          this.handleGroupValueChange(objectName, groupValue);
+        },
+        parseSubstitutions: function(substitutionsStr) {
+          if (!substitutionsStr || !substitutionsStr.trim()) {
+            return {};
+          }
+          var result = {};
+          try {
+            var parts = substitutionsStr.trim().split(',');
+            for (var i = 0; i < parts.length; i++) {
+              var part = parts[i].trim();
+              if (part.indexOf('-') !== -1) {
+                var splitIndex = part.indexOf('-');
+                var key = part.substring(0, splitIndex).trim();
+                var value = part.substring(splitIndex + 1).trim();
+                result[key] = value;
+              }
+            }
+          } catch (e) {
+            console.warn('Dashboard: Error parsing substitutions:', e);
+          }
+          return result;
+        },
+        getGroupTitle: function(groupValue, groupConfig) {
+          if (groupValue === null || groupValue === undefined) {
+            return null;
+          }
+          var substitutionsStr = (groupConfig && groupConfig.value_substitutions) ? groupConfig.value_substitutions.trim() : '';
+          if (substitutionsStr) {
+            var substitutions = this.parseSubstitutions(substitutionsStr);
+            var valueStr = String(groupValue);
+            if (substitutions[valueStr]) {
+              return substitutions[valueStr];
+            }
+            // Также пробуем числовое значение
+            try {
+              if (typeof groupValue === 'number' || !isNaN(Number(groupValue))) {
+                var numStr = String(Math.floor(Number(groupValue)));
+                if (substitutions[numStr]) {
+                  return substitutions[numStr];
+                }
+              }
+            } catch (e) {
+              // Ignore
+            }
+          }
+          return String(groupValue);
+        },
+        handleGroupValueChange: function(objectName, groupValue) {
+          // Используем конфигурацию из groupingInfo
+          var groupConfig = this.groupingInfo;
+          if (!groupConfig || groupConfig.type !== 'custom') {
+            return;
+          }
+          
+          // Если значение null/undefined
+          if (groupValue === null || groupValue === undefined || groupValue === '') {
+            // Если show_undefined установлен, перемещаем в группу 'undefined'
+            if (groupConfig.show_undefined) {
+              this.moveObjectToGroup(objectName, 'undefined', 'Undefined', false);
+            } else {
+              // Иначе удаляем объект
+              this.removeObject(objectName);
+            }
+            return;
+          }
+          
+          // Определяем группу
+          var groupKey = String(groupValue);
+          var groupTitle = this.getGroupTitle(groupValue, groupConfig);
+          var hasSubstitutions = groupConfig.value_substitutions && groupConfig.value_substitutions.trim() !== '';
+          
+          // Перемещаем объект в новую группу
+          this.moveObjectToGroup(objectName, groupKey, groupTitle, hasSubstitutions);
         },
         fetchObjectGroup: function(objectName) {
           var _this12 = this;
           if (!objectName) {
             return;
           }
+          // Этот метод теперь используется только для случая с object_property
           fetch(this.getGroupUrl + '?object_name=' + encodeURIComponent(objectName), {
             method: 'GET',
             credentials: 'same-origin'

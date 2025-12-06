@@ -18,7 +18,7 @@ class Dashboard(BasePlugin):
         super().__init__(app,__name__)
         self.title = "Dashboard"
         self.description = """Simple dashboard"""
-        self.version = 0.4
+        self.version = 1.0
         self.category = "App"
         self.author = "Eraser"
 
@@ -319,6 +319,8 @@ class Dashboard(BasePlugin):
                         'type': 'custom',
                         'property_name': group_config.get('property_name', '').strip(),
                         'object_property': group_config.get('object_property', '').strip(),
+                        'show_undefined': group_config.get('show_undefined', False),
+                        'value_substitutions': group_config.get('value_substitutions', '').strip(),
                     }
             
             content = {
