@@ -177,23 +177,7 @@
 
     var initialState = getInitialState(mountPoint);
 
-    // Directive to execute scripts in inserted HTML
-    Vue.directive('safe-html', {
-      bind: function(el, binding) {
-        // Store initial value
-        el._safeHtmlValue = binding.value;
-      },
-      inserted: function(el, binding) {
-        // Execute scripts when element is inserted into DOM
-        setAndExecute(el, binding.value);
-      },
-      update: function(el, binding) {
-        if (binding.value !== binding.oldValue) {
-          setAndExecute(el, binding.value);
-        }
-      }
-    });
-
+    // Function to execute scripts in inserted HTML (made available globally)
     function setAndExecute(el, html) {
       if (!html) {
         el.innerHTML = '';
@@ -323,6 +307,26 @@
         }, 0);
       });
     }
+
+    // Make setAndExecute available globally for Vue methods
+    window.dashboardSetAndExecute = setAndExecute;
+
+    // Directive to execute scripts in inserted HTML
+    Vue.directive('safe-html', {
+      bind: function(el, binding) {
+        // Store initial value
+        el._safeHtmlValue = binding.value;
+      },
+      inserted: function(el, binding) {
+        // Execute scripts when element is inserted into DOM
+        setAndExecute(el, binding.value);
+      },
+      update: function(el, binding) {
+        if (binding.value !== binding.oldValue) {
+          setAndExecute(el, binding.value);
+        }
+      }
+    });
 
     new Vue({
       el: '#dashboard-app',
@@ -822,7 +826,22 @@
           }
           var group = this.groups[groupKey];
           if (group && group.objects) {
-            this.$set(group.objects, msg.object, msg.value || '');
+            var _this = this;
+            var oldValue = group.objects[msg.object];
+            // Обновляем значение через $set для реактивности Vue
+            // Создаём новую строку, чтобы Vue гарантированно увидел изменение
+            this.$set(group.objects, msg.object, String(msg.value || ''));
+            // Принудительно обновляем DOM элемент через $nextTick
+            this.$nextTick(function() {
+              var elementId = 'dashboard-obj:' + msg.object;
+              var element = document.getElementById(elementId);
+              if (element && msg.value && window.dashboardSetAndExecute) {
+                // Удаляем атрибут data-scripts-executed чтобы скрипты выполнились заново
+                element.removeAttribute('data-scripts-executed');
+                // Вызываем setAndExecute напрямую для гарантированного обновления
+                window.dashboardSetAndExecute(element, msg.value);
+              }
+            });
           }
         },
         removeObject: function(objectName) {
