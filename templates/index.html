@@ -153,6 +153,8 @@
 
 <!-- Specific Page JS goes HERE  -->
 {% block javascripts %}
+{{ super() }}
+<script src="{{ config.ASSETS_ROOT }}/plugins/morphdom/morphdom.js"></script>
 <script src="{{ config.ASSETS_ROOT }}/plugins/vue/vue@2.js"></script>
 <script>
 (function() {
@@ -177,27 +179,118 @@
 
     var initialState = getInitialState(mountPoint);
 
-    // Function to execute scripts in inserted HTML (made available globally)
+    // Function to update HTML and execute scripts (made available globally)
     function setAndExecute(el, html) {
+      if (!el) return;
+
       if (!html) {
         el.innerHTML = '';
+        el.removeAttribute('data-content-hash');
+        el.removeAttribute('data-scripts-executed');
         return;
       }
-      
+
       // Check if scripts were already executed for this content
       var contentHash = el.getAttribute('data-content-hash');
       var newHash = String(html.length) + '_' + (html.substring(0, 50).replace(/[^a-zA-Z0-9]/g, ''));
-      
+
       // If content hasn't changed, don't re-execute
       if (contentHash === newHash && el.hasAttribute('data-scripts-executed')) {
         return;
       }
-      
-      el.innerHTML = html || '';
+
+      // Prepare wrapper with new HTML
+      var wrapper = document.createElement(el.tagName);
+      wrapper.innerHTML = html || '';
+
+      // Preserve active input/select/textarea to avoid closing native pickers (e.g. <input type="color">)
+      var activeEl = document.activeElement;
+      var activeElIsInside = activeEl && el.contains(activeEl);
+
+      // Detach open modals inside this dashboard object to keep them alive across rerenders
+      var detachedModalIds = [];
+      try {
+        el.querySelectorAll('.modal.show').forEach(function(modalEl) {
+          if (!modalEl.id) return;
+          var placeholder = document.createElement('div');
+          placeholder.setAttribute('data-modal-placeholder', modalEl.id);
+
+          if (modalEl.parentNode) {
+            modalEl.parentNode.insertBefore(placeholder, modalEl);
+            modalEl.parentNode.removeChild(modalEl);
+          } else {
+            return;
+          }
+
+          document.body.appendChild(modalEl);
+          modalEl.setAttribute('data-modal-owner', el.id || '');
+
+          var onHidden = function() {
+            modalEl.removeEventListener('hidden.bs.modal', onHidden);
+            // try to restore into current object element if present
+            var ownerEl = el.id ? document.getElementById(el.id) : null;
+            var newPlaceholder = ownerEl ? ownerEl.querySelector('[data-modal-placeholder=\"' + modalEl.id + '\"]') : null;
+            if (newPlaceholder && newPlaceholder.parentNode) {
+              newPlaceholder.parentNode.insertBefore(modalEl, newPlaceholder);
+              newPlaceholder.parentNode.removeChild(newPlaceholder);
+            } else if (modalEl.parentNode) {
+              modalEl.parentNode.removeChild(modalEl);
+            }
+            modalEl.removeAttribute('data-modal-owner');
+          };
+          modalEl.addEventListener('hidden.bs.modal', onHidden);
+
+          detachedModalIds.push(modalEl.id);
+        });
+      } catch (e) {
+        console.warn('Dashboard: error detaching modals', e);
+      }
+
+      // Morph DOM in-place (children only) to avoid losing node identity.
+      // If anything goes wrong, fall back to plain innerHTML to avoid breaking initial render.
+      try {
+        if (typeof window.morphdom === 'function') {
+          window.morphdom(el, wrapper, {
+            childrenOnly: true,
+            onBeforeElUpdated: function(fromEl, toEl) {
+              if (activeElIsInside && fromEl === activeEl) {
+                var tag = (fromEl.tagName || '').toUpperCase();
+                if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
+                  return false;
+                }
+              }
+
+              // Avoid duplicating detached open modals on rerender
+              if (detachedModalIds.length > 0) {
+                var placeholderId = (fromEl.getAttribute && fromEl.getAttribute('data-modal-placeholder')) || null;
+                if (placeholderId && detachedModalIds.indexOf(placeholderId) !== -1) {
+                  return false;
+                }
+                if (toEl && toEl.id && detachedModalIds.indexOf(toEl.id) !== -1) {
+                  return false;
+                }
+              }
+              return true;
+            },
+            onBeforeNodeAdded: function(node) {
+              if (detachedModalIds.length > 0 && node && node.id && detachedModalIds.indexOf(node.id) !== -1) {
+                return false;
+              }
+              return true;
+            }
+          });
+        } else {
+          el.innerHTML = html || '';
+        }
+      } catch (e) {
+        console.warn('Dashboard: morphdom update failed, falling back to innerHTML', e);
+        el.innerHTML = html || '';
+      }
+
       el.setAttribute('data-content-hash', newHash);
       el.removeAttribute('data-scripts-executed');
-      
-      // Use requestAnimationFrame to ensure DOM is ready and scripts execute properly
+
+      // Execute scripts after DOM update
       requestAnimationFrame(function() {
         setTimeout(function() {
         var scripts = el.querySelectorAll('script');
