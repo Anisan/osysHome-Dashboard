@@ -115,9 +115,6 @@
 </div>
 
 <style>
-  [v-cloak] {
-    display: none;
-  }
   .cursor-pointer {
     cursor: pointer;
   }
@@ -253,6 +250,17 @@
           window.morphdom(el, wrapper, {
             childrenOnly: true,
             onBeforeElUpdated: function(fromEl, toEl) {
+              // Keep existing time-component node to avoid flicker on frequent updates.
+              if (fromEl.classList && toEl.classList &&
+                  fromEl.classList.contains('time-component') &&
+                  toEl.classList.contains('time-component')) {
+                var nextStartTime = toEl.getAttribute('data-start-time');
+                if (nextStartTime !== null && fromEl.getAttribute('data-start-time') !== nextStartTime) {
+                  fromEl.setAttribute('data-start-time', nextStartTime);
+                }
+                return false;
+              }
+
               if (activeElIsInside && fromEl === activeEl) {
                 var tag = (fromEl.tagName || '').toUpperCase();
                 if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
@@ -441,6 +449,7 @@
           subscribedProperties: {},
           subscribedObjects: {},
           timeUpdateInterval: null,
+          visibilityChangeHandler: null,
           getGroupUrl: '/admin/Dashboard/get_object_group',
           changeObjectListenerAttached: false,
           groupingListenerAttached: false
@@ -465,6 +474,11 @@
       beforeDestroy: function() {
         if (this.timeUpdateInterval) {
           clearInterval(this.timeUpdateInterval);
+          this.timeUpdateInterval = null;
+        }
+        if (this.visibilityChangeHandler) {
+          window.removeEventListener('visibilitychange', this.visibilityChangeHandler);
+          this.visibilityChangeHandler = null;
         }
       },
       methods: {
@@ -620,26 +634,44 @@
             });
         },
         initializeTimeUpdates: function() {
-          var _this5 = this;
+          if (this.timeUpdateInterval) {
+            clearInterval(this.timeUpdateInterval);
+            this.timeUpdateInterval = null;
+          }
+          if (this.visibilityChangeHandler) {
+            window.removeEventListener('visibilitychange', this.visibilityChangeHandler);
+            this.visibilityChangeHandler = null;
+          }
+
           var updateAllTimes = function() {
             if (typeof formatTimeDiff !== 'function') {
               return;
             }
+            var currentTimeMs = Date.now();
             document.querySelectorAll('.time-component').forEach(function(component) {
-              if (!component.dataset.startTime) {
+              var startTimeValue = component.dataset.startTime;
+              if (!startTimeValue) {
                 return;
               }
-              var elapsedTime = Date.now() - new Date(component.dataset.startTime).getTime();
-              component.textContent = formatTimeDiff(elapsedTime);
+              var startTimeMs = Date.parse(startTimeValue);
+              if (Number.isNaN(startTimeMs)) {
+                return;
+              }
+              var elapsedTime = currentTimeMs - startTimeMs;
+              var formattedTime = formatTimeDiff(elapsedTime);
+              if (component.textContent !== formattedTime) {
+                component.textContent = formattedTime;
+              }
             });
           };
           updateAllTimes();
           this.timeUpdateInterval = setInterval(updateAllTimes, 1000);
-          window.addEventListener('visibilitychange', function() {
+          this.visibilityChangeHandler = function() {
             if (!document.hidden) {
               updateAllTimes();
             }
-          });
+          };
+          window.addEventListener('visibilitychange', this.visibilityChangeHandler);
         },
         setupGroupingIntegration: function() {
           var _this6 = this;
