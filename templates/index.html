@@ -40,8 +40,8 @@
             </div>
             {% endif %}
             
-            <div class="group-ribbon mb-3 px-2" v-if="showGroupRibbon">
-                <div class="btn-group" role="group" aria-label="Group selection">
+            <div class="group-ribbon mb-3 px-1 px-sm-2" v-if="showGroupRibbon">
+                <div class="group-switches d-flex flex-wrap gap-1" role="group" aria-label="Group selection">
                     <button
                         type="button"
                         class="btn btn-sm group-switch-btn"
@@ -91,7 +91,7 @@
                     :class="{ show: !isCollapsed(groupKey) || selectedGroup === 'none' }"
                     :id="safeGroupId(groupKey)"
                 >
-                    <div class="row mx-1 mt-2">
+                    <div class="row mx-0 mx-sm-1 mt-2">
                         <template v-if="hasObjects(groupKey)">
                             <div
                                 class="col-6 col-sm-4 col-md-3 col-lg-2 col-xl-1-5 col-xxl-1-5 mb-2 px-1"
@@ -123,6 +123,20 @@
   }
   .group-header:hover {
     background-color: var(--bs-tertiary-bg) !important;
+  }
+  .group-switches .group-switch-btn {
+    display: inline-flex;
+    align-items: center;
+    white-space: nowrap;
+  }
+  @media (max-width: 575.98px) {
+    .group-switches {
+      width: 100%;
+      justify-content: flex-start;
+    }
+    .group-switches .group-switch-btn {
+      justify-content: center;
+    }
   }
   [data-bs-theme="dark"] .group-header {
     border: 1px solid var(--bs-border-color);
@@ -859,13 +873,20 @@
           if (!msg || !msg.property || !this.groupingInfo) {
             return;
           }
-          var parts = msg.property.split('.');
-          if (parts.length !== 2) {
+
+          var groupingProperty = this.groupingInfo.property_name;
+          if (!groupingProperty) {
             return;
           }
-          var objectName = parts[0];
-          var propertyName = parts[1];
-          if (propertyName !== this.groupingInfo.property_name) {
+
+          var suffix = '.' + groupingProperty;
+          if (typeof msg.property !== 'string' || !msg.property.endsWith(suffix)) {
+            return;
+          }
+
+          // Object names may also contain dots, so split by suffix, not by first dot.
+          var objectName = msg.property.slice(0, -suffix.length);
+          if (!objectName) {
             return;
           }
           
