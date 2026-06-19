@@ -169,9 +169,7 @@ class Dashboard(BasePlugin):
         @self.blueprint.route("/index")
         @handle_user_required
         def index():
-            objects_storage.preload_objects()
-            
-            # Загружаем настройки и группы
+            # Load settings and groups
             custom_groups = self.config.get('custom_groups', [])
             show_class = self.config.get('group', False)
             show_none = not self.config.get('hide_no_grouping', False)
